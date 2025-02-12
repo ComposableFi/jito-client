@@ -6,10 +6,9 @@ use futures_util::StreamExt;
 use jito_protos::{
     convert::versioned_tx_from_packet,
     searcher::{
-        mempool_subscription, searcher_service_client::SearcherServiceClient,
-        ConnectedLeadersRegionedRequest, GetTipAccountsRequest, MempoolSubscription,
-        NextScheduledLeaderRequest, PendingTxNotification, ProgramSubscriptionV0,
-        SubscribeBundleResultsRequest, WriteLockedAccountSubscriptionV0,
+        searcher_service_client::SearcherServiceClient, ConnectedLeadersRegionedRequest,
+        GetTipAccountsRequest, NextScheduledLeaderRequest, PendingTxNotification,
+        SubscribeBundleResultsRequest,
     },
 };
 use jito_searcher_client::{
