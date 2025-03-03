@@ -99,7 +99,7 @@ pub async fn send_bundle_with_confirmation<T>(
     rpc_client: &RpcClient,
     searcher_client: &mut SearcherServiceClient<T>,
     bundle_results_subscription: &mut Streaming<BundleResult>,
-) -> Result<(), Box<dyn std::error::Error>>
+) -> Result<Vec<Signature>, Box<dyn std::error::Error>>
 where
     T: tonic::client::GrpcService<tonic::body::BoxBody> + Send + 'static + Clone,
     T::Error: Into<StdError>,
@@ -112,90 +112,88 @@ where
 
     let result = send_bundle_no_wait(transactions, searcher_client).await?;
 
-    // grab uuid from block engine + wait for results
     let uuid = result.into_inner().uuid;
-    info!("Bundle sent. UUID: {:?}", uuid);
+    info!("Bundle sent with UUID: {:?}", uuid);
 
-    info!("Waiting for 5 seconds to hear results...");
-    let mut time_left = 5000;
-    while let Ok(Some(Ok(results))) = timeout(
-        Duration::from_millis(time_left),
-        bundle_results_subscription.next(),
-    )
-    .await
-    {
-        let instant = Instant::now();
-        info!("bundle results: {:?}", results);
-        match results.result {
-            Some(BundleResultType::Accepted(Accepted {
-                slot: _s,
-                validator_identity: _v,
-            })) => {}
-            Some(BundleResultType::Rejected(rejected)) => {
-                match rejected.reason {
-                    Some(Reason::WinningBatchBidRejected(WinningBatchBidRejected {
-                        auction_id,
-                        simulated_bid_lamports,
-                        msg: _,
-                    })) => {
-                        return Err(Box::new(BundleRejectionError::WinningBatchBidRejected(
+    const MAX_TRIES: i32 = 30;
+
+    for i in 0..=MAX_TRIES {
+        if i == MAX_TRIES {
+            warn!("Bundle did not land in time");
+            return Err(Box::new(BundleRejectionError::InternalError(
+                "Searcher service did not provide bundle status in time".into(),
+            )));
+        }
+
+        info!("Waiting for 0.5 seconds to hear results...");
+        let mut time_left = 500;
+        while let Ok(Some(Ok(results))) = timeout(
+            Duration::from_millis(time_left),
+            bundle_results_subscription.next(),
+        )
+        .await
+        {
+            let instant = Instant::now();
+            match results.result {
+                Some(BundleResultType::Accepted(Accepted {
+                    slot: _s,
+                    validator_identity: _v,
+                })) => {}
+                Some(BundleResultType::Rejected(rejected)) => {
+                    match rejected.reason {
+                        Some(Reason::WinningBatchBidRejected(WinningBatchBidRejected {
                             auction_id,
                             simulated_bid_lamports,
-                        )))
-                    }
-                    Some(Reason::StateAuctionBidRejected(StateAuctionBidRejected {
-                        auction_id,
-                        simulated_bid_lamports,
-                        msg: _,
-                    })) => {
-                        return Err(Box::new(BundleRejectionError::StateAuctionBidRejected(
+                            msg: _,
+                        })) => {
+                            return Err(Box::new(BundleRejectionError::WinningBatchBidRejected(
+                                auction_id,
+                                simulated_bid_lamports,
+                            )))
+                        }
+                        Some(Reason::StateAuctionBidRejected(StateAuctionBidRejected {
                             auction_id,
                             simulated_bid_lamports,
-                        )))
-                    }
-                    Some(Reason::SimulationFailure(SimulationFailure { tx_signature, msg })) => {
-                        return Err(Box::new(BundleRejectionError::SimulationFailure(
+                            msg: _,
+                        })) => {
+                            return Err(Box::new(BundleRejectionError::StateAuctionBidRejected(
+                                auction_id,
+                                simulated_bid_lamports,
+                            )))
+                        }
+                        Some(Reason::SimulationFailure(SimulationFailure {
                             tx_signature,
                             msg,
-                        )))
-                    }
-                    Some(Reason::InternalError(InternalError { msg })) => {
-                        return Err(Box::new(BundleRejectionError::InternalError(msg)))
-                    }
-                    _ => {}
-                };
+                        })) => {
+                            return Err(Box::new(BundleRejectionError::SimulationFailure(
+                                tx_signature,
+                                msg,
+                            )))
+                        }
+                        Some(Reason::InternalError(InternalError { msg })) => {
+                            return Err(Box::new(BundleRejectionError::InternalError(msg)))
+                        }
+                        _ => {}
+                    };
+                }
+                _ => {}
             }
-            _ => {}
+            time_left -= instant.elapsed().as_millis() as u64;
         }
-        time_left -= instant.elapsed().as_millis() as u64;
-    }
 
-    let futs: Vec<_> = bundle_signatures
-        .iter()
-        .map(|sig| {
-            rpc_client.get_signature_status_with_commitment(sig, CommitmentConfig::processed())
-        })
-        .collect();
-    let results = futures_util::future::join_all(futs).await;
-    if !results.iter().all(|r| matches!(r, Ok(Some(Ok(()))))) {
-        warn!("Transactions in bundle did not land");
-        return Err(Box::new(BundleRejectionError::InternalError(
-            "Searcher service did not provide bundle status in time".into(),
-        )));
+        let futs: Vec<_> = bundle_signatures
+            .iter()
+            .map(|sig| {
+                rpc_client.get_signature_status_with_commitment(sig, CommitmentConfig::processed())
+            })
+            .collect();
+        let results = futures_util::future::join_all(futs).await;
+        if !results.iter().all(|r| matches!(r, Ok(Some(Ok(()))))) {
+            continue;
+        }
+        break;
     }
-    info!("Bundle landed successfully");
-    let url: String = rpc_client.url();
-    let cluster = if url.contains("testnet") {
-        "testnet"
-    } else if url.contains("devnet") {
-        "devnet"
-    } else {
-        "mainnet"
-    };
-    for sig in bundle_signatures.iter() {
-        info!("https://solscan.io/tx/{}?cluster={}", sig, cluster);
-    }
-    Ok(())
+    Ok(bundle_signatures)
 }
 
 pub async fn send_bundle_no_wait<T>(
