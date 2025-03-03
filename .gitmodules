@@ -1,3 +1,5 @@
-[submodule "jito_protos/protos"]
-	path = jito_protos/protos
+
+[submodule "jito-protos"]
+	path = jito-protos/protos
 	url = https://github.com/jito-labs/mev-protos.git
+	branch = master

@@ -1,0 +1,18 @@
+[package]
+edition = "2021"
+name = "jito-protos"
+rust-version = { workspace = true }
+version = { workspace = true }
+
+[dependencies]
+bincode = { workspace = true }
+bytes = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+solana-packet = { workspace = true }
+solana-perf = { workspace = true }
+solana-sdk = { workspace = true }
+tonic = { workspace = true }
+
+[build-dependencies]
+tonic-build = { workspace = true }

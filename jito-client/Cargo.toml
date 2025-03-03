@@ -1,0 +1,18 @@
+[package]
+edition = "2021"
+name = "jito-client"
+rust-version = { workspace = true }
+version = { workspace = true }
+
+[dependencies]
+futures-util = { workspace = true }
+jito-protos = { workspace = true }
+log = { workspace = true }
+prost-types = { workspace = true }
+solana-client = { workspace = true }
+solana-metrics = { workspace = true }
+solana-sdk = { workspace = true }
+solana-transaction-status = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
