@@ -113,19 +113,19 @@ where
     let result = send_bundle_no_wait(transactions, searcher_client).await?;
 
     let uuid = result.into_inner().uuid;
-    info!("Bundle sent with UUID: {:?}", uuid);
+    info!("Bundle sent with UUID: {}", uuid);
 
     const MAX_TRIES: i32 = 30;
 
     for i in 0..=MAX_TRIES {
         if i == MAX_TRIES {
-            warn!("Bundle did not land in time");
+            warn!("Bundle not processed on time");
             return Err(Box::new(BundleRejectionError::InternalError(
                 "Searcher service did not provide bundle status in time".into(),
             )));
         }
 
-        info!("Waiting for 0.5 seconds to hear results...");
+        info!("Waiting 0.5 seconds before checking bundle signatures...");
         let mut time_left = 500;
         while let Ok(Some(Ok(results))) = timeout(
             Duration::from_millis(time_left),
